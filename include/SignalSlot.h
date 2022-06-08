@@ -11,54 +11,119 @@
 #include "utils.h"
 
 namespace RSL {
-    enum class InvokeType {
-        IMMEDIATELY,
-        ASYNC
+
+    template<typename Ret, typename ...Args>
+    class SlotBase {
+        std::string name;
+    public:
+        SlotBase(std::string name): name(std::move(name)) {
+        }
+
+        const std::string& getName() const {
+            return name;
+        }
+        virtual Ret operator()(Args...) = 0;
     };
 
     template<typename Ret, typename ...Args>
-    class Connection {
+    class SlotFunc: public SlotBase<Ret, Args...> {
         std::function<Ret(Args...)> callback;
-        std::string name;
     public:
-        Connection(std::function<Ret(Args...)> callback, std::string name):
-            callback(std::move(callback)),
-            name(std::move(name)) {}
+        SlotFunc(std::function<Ret(Args...)> callback, std::string name):
+            SlotBase<Ret, Args...>(std::move(name)), callback(std::move(callback)){}
 
-        template<typename ...U>
-        Ret operator()(U && ...args) {
-            return callback(std::forward<U>(args)...);
+        Ret operator()(Args ...args) {
+            return callback(args...);
         }
     };
 
-    template<typename ...Args>
-    class Signal {
+    template<typename Class, typename Ret, typename ...Args>
+    class SlotMember: public SlotBase<Ret, Args...> {
+        using FuncType = Ret(Class::*)(Args...);
+        Class *obj;
+        FuncType func;
+    public:
+        SlotMember(Class* obj, FuncType func, std::string name):
+            SlotBase<Ret, Args...>(name), obj(obj), func(func) {
+
+        }
+
+        Ret operator()(Args ...args) {
+            return ((*obj).*func)(args...);
+        }
+    };
+
+
+    class Connection {
+        std::string signalName;
+        std::string slotName;
+    public:
+        Connection(std::string signalName, std::string slotName):
+        signalName(std::move(signalName)),
+        slotName(std::move(slotName)) {}
+
+        [[nodiscard]] const std::string& getSignalName() const {
+            return signalName;
+        }
+
+        [[nodiscard]] const std::string& getSlotName() const {
+            return slotName;
+        }
+    };
+
+    template<typename... A>
+    class Signal: public Signal<void(A...)>{};
+
+    template<typename Ret, typename ...Args>
+    class Signal<Ret(Args...)> {
     private:
-        using ConnectionType = Connection<void, Args...>;
-        using CallBackType = std::function<void(Args...)>;
+        using SlotType = SlotBase<Ret, Args...>;
+        using CallBackType = std::function<Ret(Args...)>;
 
         std::string name;
-        std::vector<ConnectionType> connections;
+        std::vector<std::unique_ptr<SlotBase<Ret, Args...>>> connections;
     public:
         Signal() {
             name = generateID("slot", typeid(*this).name());
         }
 
-        ConnectionType & connect(CallBackType func, std::string connectionName="") {
-            if (connectionName.empty()) {
-                connectionName = generateID(name, "connection");
+        Connection connect(CallBackType func, std::string slotName="") {
+            if (slotName.empty()) {
+                slotName = generateID(name, "connection");
             }
-            connections.emplace_back(func, connectionName);
-            return connections[connections.size() - 1];
+            connections.push_back(std::make_unique<SlotFunc<Ret, Args...>>(func, slotName));
+
+            return {name, slotName};
+        }
+
+        template<typename Class>
+        Connection connect(Class *obj, Ret(Class::*func)(Args...), std::string slotName="") {
+            if (slotName.empty()) {
+                slotName = generateID(name, "connection");
+            }
+            connections.push_back(std::make_unique<SlotMember<Class, Ret, Args...>>(obj, func, slotName));
+
+            return {name, slotName};
+        }
+
+        void disconnect(const Connection& conn) {
+            if (conn.getSignalName() != name) {
+                return;
+            }
+
+            connections.erase(std::remove_if(connections.begin(), connections.end(),
+                           [&conn](const auto& ptr){
+               return ptr->getName() == conn.getSlotName();
+            }), connections.end());
         }
 
         template<typename...U>
         void operator()(U && ...args) {
             if (connections.size() == 1) {
-                connections[0](std::forward<U>(args)...);
+                connections[0]->operator()(std::forward<U>(args)...);
             } else {
                 for (auto &conn: connections) {
-                    conn(args...);
+                    conn->operator()(args...);
                 }
             }
         }

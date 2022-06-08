@@ -18,6 +18,10 @@ struct MyClass {
         ano.val = 0;
         std::cout << "call move constructor " << val << " " << &ano << "->" << this << std::endl;
     }
+
+    void call(int a, MyClass self) {
+        std::cout << "member func " << a << " " << self.val << std::endl;
+    }
 };
 
 void slot_func(int a, MyClass b) {
@@ -37,7 +41,15 @@ int main() {
     std::cout << std::endl;
 
     MyClass d(20);
-    sig.connect(lambda);
+    auto conn = sig.connect(lambda);
     sig(2, std::move(d));
+
+    sig.disconnect(conn);
+
+    std::cout << std::endl;
+    sig.connect(&c, &MyClass::call);
+
+    MyClass e(30);
+    sig(3, e);
     return 0;
 }
