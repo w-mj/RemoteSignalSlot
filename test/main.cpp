@@ -36,8 +36,9 @@ int main() {
     sig.connect(slot_func);
 
     MyClass c(10);
-    sig(0, c);
-    sig(1, std::move(c));
+    sig.emit(0, c);
+    std::cout << std::endl;
+    sig.emit(1, std::move(c));
     std::cout << c.val << std::endl;
 
     std::cout << std::endl;
@@ -54,6 +55,7 @@ int main() {
     MyClass e(30);
     sig(3, e);
 
+    std::cout << std::endl;
     std::array<std::any, 2> args = {100, e};
     sig.emitWithAny(args);
     return 0;

@@ -11,15 +11,16 @@
 #include <array>
 #include <any>
 #include "utils.h"
+#include "SignalEnclosure.h"
+#include "ConsumerManager.h"
 
 namespace RSL {
-
     template<typename Ret, typename ...Args>
     class SlotBase {
         std::string name;
 
         template<size_t ...S>
-        Ret callFunc(std::index_sequence<S...>, const std::array<std::any, sizeof...(Args)>& args) {
+        Ret invokeWithAny(std::index_sequence<S...>, const std::array<std::any, sizeof...(Args)>& args) {
             return invoke(std::any_cast<typename std::tuple_element<S, std::tuple<Args...>>::type>(args[S])...);
         }
     public:
@@ -32,9 +33,8 @@ namespace RSL {
         virtual Ret invoke(Args...) = 0;
 
         Ret invokeWithAny(const std::array<std::any, sizeof...(Args)>& arg) {
-            return callFunc(std::make_index_sequence<sizeof...(Args)>{}, arg);
+            return invokeWithAny(std::make_index_sequence<sizeof...(Args)>{}, arg);
         }
-
     };
 
     template<typename Ret, typename ...Args>
@@ -82,6 +82,8 @@ namespace RSL {
             return slotName;
         }
     };
+
+    class ConsumerManager;
 
     template<typename... A>
     class Signal: public Signal<void(A...)>{};
@@ -132,13 +134,17 @@ namespace RSL {
 
         template<typename...U>
         void emit(U && ...args) {
-            if (connections.size() == 1) {
-                connections[0]->invoke(std::forward<U>(args)...);
-            } else {
-                for (auto &conn: connections) {
-                    conn->invoke(args...);
-                }
-            }
+            SignalEnclosure enclosure(name);
+//            std::vector<std::any> data {args...};
+            enclosure.setArgs(std::forward<U>(args)...);
+            ConsumerManager::getInstance().addSignal(std::move(enclosure));
+//            if (connections.size() == 1) {
+//                connections[0]->invoke(std::forward<U>(args)...);
+//            } else {
+//                for (auto &conn: connections) {
+//                    conn->invoke(args...);
+//                }
+//            }
         }
 
         template<typename ...U>
