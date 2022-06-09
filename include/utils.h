@@ -130,6 +130,7 @@ constexpr bool is_pmf_v = std::is_member_function_pointer<T>::value;
 //        std::remove_pointer_t<std::remove_reference_t<T>>>::value;
 
 } // namespace trait
+
 }
 
 #endif //REMOTESIGNALSLOT_UTILS_H

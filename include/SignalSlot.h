@@ -8,6 +8,8 @@
 #include <string>
 #include <functional>
 #include <set>
+#include <array>
+#include <any>
 #include "utils.h"
 
 namespace RSL {
@@ -15,14 +17,24 @@ namespace RSL {
     template<typename Ret, typename ...Args>
     class SlotBase {
         std::string name;
+
+        template<size_t ...S>
+        Ret callFunc(std::index_sequence<S...>, const std::array<std::any, sizeof...(Args)>& args) {
+            return invoke(std::any_cast<typename std::tuple_element<S, std::tuple<Args...>>::type>(args[S])...);
+        }
     public:
         SlotBase(std::string name): name(std::move(name)) {
         }
 
-        const std::string& getName() const {
+        [[nodiscard]] const std::string& getName() const {
             return name;
         }
-        virtual Ret operator()(Args...) = 0;
+        virtual Ret invoke(Args...) = 0;
+
+        Ret invokeWithAny(const std::array<std::any, sizeof...(Args)>& arg) {
+            return callFunc(std::make_index_sequence<sizeof...(Args)>{}, arg);
+        }
+
     };
 
     template<typename Ret, typename ...Args>
@@ -32,8 +44,9 @@ namespace RSL {
         SlotFunc(std::function<Ret(Args...)> callback, std::string name):
             SlotBase<Ret, Args...>(std::move(name)), callback(std::move(callback)){}
 
-        Ret operator()(Args ...args) {
-            return callback(args...);
+
+        Ret invoke(Args ...args) {
+            return callback(std::move(args)...);
         }
     };
 
@@ -45,11 +58,10 @@ namespace RSL {
     public:
         SlotMember(Class* obj, FuncType func, std::string name):
             SlotBase<Ret, Args...>(name), obj(obj), func(func) {
-
         }
 
-        Ret operator()(Args ...args) {
-            return ((*obj).*func)(args...);
+        Ret invoke(Args ...args) {
+            return ((*obj).*func)(std::move(args)...);
         }
     };
 
@@ -79,6 +91,7 @@ namespace RSL {
     private:
         using SlotType = SlotBase<Ret, Args...>;
         using CallBackType = std::function<Ret(Args...)>;
+        static constexpr size_t argSize = sizeof...(Args);
 
         std::string name;
         std::vector<std::unique_ptr<SlotBase<Ret, Args...>>> connections;
@@ -118,12 +131,29 @@ namespace RSL {
         }
 
         template<typename...U>
-        void operator()(U && ...args) {
+        void emit(U && ...args) {
             if (connections.size() == 1) {
-                connections[0]->operator()(std::forward<U>(args)...);
+                connections[0]->invoke(std::forward<U>(args)...);
             } else {
                 for (auto &conn: connections) {
-                    conn->operator()(args...);
+                    conn->invoke(args...);
+                }
+            }
+        }
+
+        template<typename ...U>
+        void operator()(U && ...args) {
+            return emit(std::forward<U>(args)...);
+        }
+
+        template<typename A>
+        std::enable_if_t<std::is_same_v<std::remove_reference_t<A>, std::array<std::any, argSize>>>
+        emitWithAny(A && args) {
+            if (connections.size() == 1) {
+                connections[0]->invokeWithAny(std::forward<A>(args));
+            } else {
+                for (auto &conn: connections) {
+                    conn->invokeWithAny(args);
                 }
             }
         }
