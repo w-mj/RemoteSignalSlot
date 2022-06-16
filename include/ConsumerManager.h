@@ -13,11 +13,16 @@ namespace RSL {
 class ConsumerManager {
     std::queue<SignalEnclosure> signalQueue;
     ConsumerManager() = default;
+    void networkLoop();
+
+    bool running = true;
 
 public:
 
     // 添加信号，信号一定会被移动，即一个信号只能被添加一次
     void addSignal(SignalEnclosure&& signal);
+
+    void stop();
 
     static ConsumerManager& getInstance();
 
